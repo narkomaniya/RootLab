@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RootLab — Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101114;
+      --panel: #191b20;
+      --panel-hover: #22252c;
+      --line: #2b2e36;
+      --text: #f0f1f3;
+      --muted: #9da1aa;
+      --accent: #a6c8ff;
+      --green: #8bd5a5;
+      --red: #ff9a9a;
+      --yellow: #eac27a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 Arial, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .app {
+      width: min(760px, 100%);
+      min-height: 100vh;
+      margin: auto;
+      padding: 22px 18px 100px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 30px;
+    }
+
+    .brand { font-size: 21px; font-weight: 700; }
+
+    .demo-label {
+      color: var(--yellow);
+      border: 1px solid #57492c;
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    h1 { margin: 0 0 5px; font-size: 27px; }
+    h2 { margin: 28px 0 12px; font-size: 18px; }
+    p { color: var(--muted); }
+
+    .notice, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 16px;
+    }
+
+    .notice {
+      margin: 18px 0;
+      color: var(--yellow);
+      font-size: 13px;
+    }
+
+    .status-line, .app-row, .log-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .status-line { margin-top: 18px; }
+
+    .pill {
+      border-radius: 20px;
+      padding: 4px 9px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .pill.on { color: var(--green); background: #1d3327; }
+    .pill.off { color: var(--muted); background: #292b30; }
+    .pill.pending { color: var(--yellow); background: #352d1d; }
+
+    .app-list { display: grid; gap: 10px; }
+
+    .app-row {
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .app-name { font-weight: 600; }
+    .app-id { color: var(--muted); font-size: 12px; }
+
+    .actions { display: flex; gap: 6px; }
+
+    .btn {
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #242730;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .btn:hover { background: var(--panel-hover); }
+    .btn.allow { color: var(--green); }
+    .btn.deny, .btn.revoke { color: var(--red); }
+    .btn:disabled { opacity: .4; cursor: default; }
+
+    .tabs {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: min(760px, 100%);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      padding: 9px 10px calc(9px + env(safe-area-inset-bottom));
+      background: #17191e;
+      border-top: 1px solid var(--line);
+    }
+
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 10px 4px;
+      cursor: pointer;
+    }
+
+    .tab.active { color: var(--accent); }
+
+    .empty { padding: 22px 12px; text-align: center; color: var(--muted); }
+    .log-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .log-row:last-child { border-bottom: 0; }
+    .time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+    .settings-row { margin: 12px 0; }
+    .small { font-size: 13px; }
+
+    @media (max-width: 520px) {
+      .app-row { align-items: flex-start; flex-direction: column; }
+      .actions { width: 100%; }
+      .actions .btn { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div class="brand">RootLab</div>
+      <span class="demo-label">ДЕМО</span>
+    </header>
+
+    <div id="screen"></div>
+  </main>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="home">Главная</button>
+    <button class="tab" data-tab="apps">Суперпользователь</button>
+    <button class="tab" data-tab="log">Журнал</button>
+  </nav>
+
+  <script>
+    const defaultApps = [
+      { id: "com.example.terminal", name: "Terminal", status: "pending" },
+      { id: "com.example.files", name: "Файловый менеджер", status: "denied" },
+      { id: "com.example.backup", name: "Backup Tool", status: "allowed" }
+    ];
+
+    let state;
+
+    try {
+      state = JSON.parse(localStorage.getItem("rootlab-demo-state"));
+    } catch {
+      state = null;
+    }
+
+    if (!state || !Array.isArray(state.apps) || !Array.isArray(state.logs)) {
+      state = { enabled: false, apps: defaultApps, logs: [] };
+    }
+
+    let activeTab = "home";
+    const screen = document.querySelector("#screen");
+
+    function save() {
+      localStorage.setItem("rootlab-demo-state", JSON.stringify(state));
+    }
+
+    function statusLabel(status) {
+      if (status === "allowed") return ["Разрешено", "on"];
+      if (status === "denied") return ["Запрещено", "off"];
+      return ["Ожидает решения", "pending"];
+    }
+
+    function addLog(app, action) {
+      state.logs.unshift({
+        app: app.name,
+        action,
+        time: new Date().toLocaleString("ru-RU")
+      });
+      state.logs = state.logs.slice(0, 50);
+      save();
+    }
+
+    function decide(id, status) {
+      const app = state.apps.find(item => item.id === id);
+      if (!app) return;
+
+      app.status = status;
+      addLog(app, status === "allowed" ? "Доступ разрешён" : "Доступ запрещён");
+      render();
+    }
+
+    function renderHome() {
+      screen.innerHTML = `
+        <h1>Состояние системы</h1>
+        <p>Демо-панель управления RootLab</p>
+
+        <div class="notice">
+          Это симулятор сайта. Он не подключается к Android и не выдаёт настоящие root-права.
+        </div>
+
+        <section class="card">
+          <div class="status-line">
+            <div>
+              <strong>RootCore</strong>
+              <div class="small" style="color:var(--muted)">
+                ${state.enabled ? "Демо-компонент включён" : "Не подключён"}
+              </div>
+            </div>
+            <span class="pill ${state.enabled ? "on" : "off"}">
+              ${state.enabled ? "Активен" : "Неактивен"}
+            </span>
+          </div>
+
+          <div class="status-line">
+            <span>Симулятор</span>
+            <button class="btn" id="toggleCore">
+              ${state.enabled ? "Выключить" : "Включить демо"}
+            </button>
+          </div>
+        </section>
+
+        <h2>Запросы доступа</h2>
+        <div class="app-list">
+          ${state.apps.filter(app => app.status === "pending").length
+            ? state.apps.filter(app => app.status === "pending").map(app => `
+              <div class="app-row">
+                <div>
+                  <div class="app-name">${escapeHtml(app.name)}</div>
+                  <div class="app-id">${escapeHtml(app.id)}</div>
+                </div>
+                <div class="actions">
+                  <button class="btn allow" data-action="allow" data-id="${app.id}">Разрешить</button>
+                  <button class="btn deny" data-action="deny" data-id="${app.id}">Отклонить</button>
+                </div>
+              </div>
+            `).join("")
+            : `<div class="card empty">Новых запросов нет</div>`
+          }
+        </div>
+      `;
+
+      document.querySelector("#toggleCore").onclick = () => {
+        state.enabled = !state.enabled;
+        save();
+        render();
+      };
+
+      screen.querySelectorAll("[data-action]").forEach(button => {
+        button.onclick = () => decide(
+          button.dataset.id,
+          button.dataset.action === "allow" ? "allowed" : "denied"
+        );
+      });
+    }
+
+    function renderApps() {
+      screen.innerHTML = `
+        <h1>Суперпользователь</h1>
+        <p>Демо-список приложений и их решений</p>
+
+        <div class="app-list">
+          ${state.apps.map(app => {
+            const [label, className] = statusLabel(app.status);
+            return `
+              <div class="app-row">
+                <div>
+                  <div class="app-name">${escapeHtml(app.name)}</div>
+                  <div class="app-id">${escapeHtml(app.id)}</div>
+                  <span class="pill ${className}">${label}</span>
+                </div>
+                <div class="actions">
+                  ${app.status === "pending" ? `
+                    <button class="btn allow" data-action="allow" data-id="${app.id}">Разрешить</button>
+                    <button class="btn deny" data-action="deny" data-id="${app.id}">Отклонить</button>
+                  ` : `
+                    <button class="btn revoke" data-action="revoke" data-id="${app.id}">Сбросить решение</button>
+                  `}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+
+        <p class="small">Изменения сохраняются в этом браузере.</p>
+        <button class="btn" id="reset">Сбросить демо</button>
+      `;
+
+      screen.querySelectorAll("[data-action]").forEach(button => {
+        button.onclick = () => {
+          if (button.dataset.action === "revoke") {
+            const app = state.apps.find(item => item.id === button.dataset.id);
+            if (!app) return;
+            app.status = "pending";
+            addLog(app, "Решение сброшено");
+            render();
+          } else {
+            decide(
+              button.dataset.id,
+              button.dataset.action === "allow" ? "allowed" : "denied"
+            );
+          }
+        };
+      });
+
+      document.querySelector("#reset").onclick = () => {
+        state = {
+          enabled: false,
+          apps: JSON.parse(JSON.stringify(defaultApps)),
+          logs: []
+        };
+        save();
+        render();
+      };
+    }
+
+    function renderLog() {
+      screen.innerHTML = `
+        <h1>Журнал</h1>
+        <p>История действий в демо</p>
+        <section class="card">
+          ${state.logs.length
+            ? state.logs.map(item => `
+              <div class="log-row">
+                <div>
+                  <strong>${escapeHtml(item.app)}</strong>
+                  <div class="small">${escapeHtml(item.action)}</div>
+                </div>
+                <span class="time">${escapeHtml(item.time)}</span>
+              </div>
+            `).join("")
+            : `<div class="empty">Записей пока нет. Разреши или отклони запрос.</div>`
+          }
+        </section>
+      `;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[char]);
+    }
+
+    function render() {
+      document.querySelectorAll(".tab").forEach(button => {
+        button.classList.toggle("active", button.dataset.tab === activeTab);
+      });
+
+      if (activeTab === "home") renderHome();
+      if (activeTab === "apps") renderApps();
+      if (activeTab === "log") renderLog();
+    }
+
+    document.querySelectorAll(".tab").forEach(button => {
+      button.onclick = () => {
+        activeTab = button.dataset.tab;
+        render();
+      };
+    });
+
+    render();
+  </script>
+</body>
+</html>
